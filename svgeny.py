@@ -74,8 +74,38 @@ def getModuleNames(fileData: str) -> list:
   return matches
 
 def getParameterDict(fileData: str) -> dict:
-  # parameter_pattern =
-  pass
+  parameterDict ={}
+  parameter_pattern = r"\s*#\(([^\)]+)\)"
+  matches = re.findall(parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  logging.info(matches)
+  return parameterDict
+
+def getParameterDictForModule(module_name: str, fileData: str) -> dict:
+  parameterDict ={}
+  parameter_pattern = fr"{module_name}\s*#\(([^\)]+)\)"
+  matches = re.findall(parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  if matches:
+    parameterString = matches[0].replace("parameter","")
+    parameterString = parameterString.strip()
+    parameterList = parameterString.split(',')
+    parameterList = [eachParam.strip() for eachParam in parameterList]
+    for eachParam in parameterList:
+      parameterName = ""
+      parameterValue = ""
+      parameterType = ""
+      if "=" in eachParam:
+        parameterName, parameterValue = eachParam.split("=")
+        parameterName = parameterName.strip()
+        parameterValue = parameterValue.strip()
+        if " " in parameterName:
+          parameterType, parameterName = parameterName.split()
+      else:
+        parameterName = eachParam
+        if " " in parameterName:
+          parameterType, parameterName = parameterName.split()
+      parameterDict[parameterName] = {"type" : parameterType, "value": parameterValue}
+      logging.info(f"Parameter Found in {module_name} -> Name: {parameterName}, Value: {parameterValue}, Type: {parameterType}")
+  return parameterDict
 
 def parserSetup():
   global parser
@@ -105,6 +135,9 @@ def main():
     with open(eachFile, 'r') as fileToProcess:
       fileData = fileToProcess.read()
       getModuleNames(fileData)
+      getParameterDict(fileData)
+      getParameterDictForModule("mod1",fileData)
+      getParameterDictForModule("mod2",fileData)
 
 if __name__ == "__main__":
     main()
