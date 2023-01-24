@@ -43,7 +43,7 @@ dirPath = "./"
 inputFileList = []
 today = date.today()
 parser = argparse.ArgumentParser()
-logging.basicConfig(format='SVGeny: [ %(levelname)-7s ] : %(message)s', level=logging.DEBUG)
+
 
 def expandFilePath(fileName: str) -> str:
   if os.path.exists(os.path.expandvars(fileName)):
@@ -107,6 +107,85 @@ def getParameterDictForModule(module_name: str, fileData: str) -> dict:
       logging.info(f"Parameter Found in {module_name} -> Name: {parameterName}, Value: {parameterValue}, Type: {parameterType}")
   return parameterDict
 
+def cleanStringOfMultiSpaces(stringToClean: str) -> str:
+  return " ".join(stringToClean.strip().split())
+
+def getPortDir(stringToCheck: str) -> str:
+  stringPartList = cleanStringOfMultiSpaces(stringToCheck).split()
+  if stringPartList[0] in ["input", "output", "inout", "interface"]:
+    return stringPartList[0]
+  else:
+    return ""
+
+def getPortWidth(portString:str) -> str:
+  pattern = r"\[([^\]]+)\]"
+  match = re.findall(pattern, portString, re.MULTILINE|re.DOTALL)
+  if match:
+    portWidth = "".join(match[0].split())
+    logging.debug("Portwidth of "+portWidth+" found for: "+portString)
+    return portWidth
+  else:
+    logging.debug("No portwidth found for: "+portString)
+    return ""
+
+def getIOPortDictForModule(module_name: str, fileData:str) -> list:
+  IOList = []
+  portListString = ""
+  with_parameter_pattern = fr"{module_name}\s*#\([^)]*\)[^()]*\(([^)]*)\)"
+  without_parameter_pattern = fr"{module_name}\s*\(([^\)]+)\)"
+  matches_with_parameter = re.findall(with_parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  matches_without_parameter = re.findall(without_parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  logging.debug(matches_with_parameter)
+  logging.debug(matches_without_parameter)
+  if not matches_with_parameter and not matches_without_parameter:
+    logging.warning(f"No IOs found for module: {module_name}")
+    return IOList
+  else:
+    matches = matches_with_parameter or matches_without_parameter
+    logging.debug(matches)
+    portListString = matches[0]
+    logging.debug(portListString)
+  portList = portListString.split(',')
+  portList = [eachPort.strip() for eachPort in portList]
+  portList = [" ".join(eachPort.split()) for eachPort in portList]
+  portList = [re.sub("\[([^\]]+)\]"," ["+getPortWidth(eachPort)+"] ",eachPort) if getPortWidth(eachPort) else eachPort for eachPort in portList]
+  portList = [" ".join(eachPort.split()) for eachPort in portList]
+  portList = [eachPort.replace("=", " = ") for eachPort in portList]
+  logging.debug(portList)
+  previousPortInfo = {"portDir":"","portType":"","portWidth":""}
+  for port in portList:
+    portDir   = "" #getPortDir(port)
+    portType  = ""
+    portWidth = "" #getPortWidth(port)
+    portName  = ""
+    portValue = ""
+    portSegments = port.split()
+    if "=" in portSegments:
+      portValue = portSegments[-1]
+      portSegments.remove(portValue)
+      portSegments.remove("=")
+    # Capturing the portName from the list
+    portName = portSegments[-1]
+    # Solving for other port parameters
+    if len(portSegments) == 1:
+      portDir = previousPortInfo["portDir"]
+      portType = previousPortInfo["portType"]
+      portWidth = previousPortInfo["portWidth"]
+    else:
+      portDir = getPortDir(port)
+      portWidth = getPortWidth(port)
+      portSegments.remove(portName)
+      if portDir:
+        portSegments.remove(portDir)
+      if portWidth:
+        portSegments.remove("["+portWidth+"]")
+      portType = " ".join(portSegments)
+    IOList.append({"portName":portName, "portDir":portDir, "portType":portType, "portWidth":portWidth, "portValue":portValue})
+    previousPortInfo = {"portDir":portDir,"portType":portType,"portWidth":portWidth}
+    logging.debug(f"=>>>>>>>>>>> Port Name: {portName}, Dir: {portDir}, Type: {portType}, Width: {portWidth}, Value: {portValue}")
+  logging.debug(IOList)
+  return IOList
+
 def parserSetup():
   global parser
   global toolVersion
@@ -114,6 +193,8 @@ def parserSetup():
                       version=toolVersion, help="Show svgeny version and exit")
   parser.add_argument('-f', '--fileinput', nargs='*', metavar='<file_input>', required=True,
                       type=str, help="Add the list of files to process")
+  parser.add_argument('-l', '--loglevel', nargs=1, metavar='<log_level>', required=False,
+                      type=str, default= "INFO", choices=["INFO", "DEBUG"],help="Set Log Verbosity. For debugging Ex. -l DEBUG")
   parser.add_argument('-d', '--dirpath', nargs=1, metavar='<dir_path>',
                       type=str, help="Directory under which output should be generated. Ex. -d ./myProjects/TB. Default is present working dir.")
   return parser.parse_args()
@@ -125,7 +206,15 @@ def main():
   parser input
   """
   global inputFileList
+  global logging
   args = parserSetup()
+  if args.loglevel:
+    if args.loglevel[0] == "DEBUG":
+      logging.basicConfig(format='SVGeny: [ %(levelname)-7s ] : %(message)s',level=logging.DEBUG)
+    else:
+      logging.basicConfig(format='SVGeny: [ %(levelname)-7s ] : %(message)s',level=logging.INFO)
+  else:
+    logging.basicConfig(format='SVGeny: [ %(levelname)-7s ] : %(message)s',level=logging.INFO)
   if args.fileinput:
     for eachFile in args.fileinput:
       fileCheck = expandFilePath(eachFile)
@@ -135,9 +224,11 @@ def main():
     with open(eachFile, 'r') as fileToProcess:
       fileData = fileToProcess.read()
       getModuleNames(fileData)
-      getParameterDict(fileData)
-      getParameterDictForModule("mod1",fileData)
-      getParameterDictForModule("mod2",fileData)
+      # getParameterDict(fileData)
+      getIOPortDictForModule("mod1",fileData)
+      getIOPortDictForModule("mod2",fileData)
+      getIOPortDictForModule("mod3",fileData)
+      # getParameterDictForModule("mod2",fileData)
 
 if __name__ == "__main__":
     main()
