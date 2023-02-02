@@ -128,6 +128,66 @@ def getPortWidth(portString:str) -> str:
     logging.debug("No portwidth found for: "+portString)
     return ""
 
+def getIOPortDict(fileData:str) -> list:
+  IOList = []
+  portListString = ""
+  module_name = ""
+  module_name = getModuleNames(fileData)[0]
+  with_parameter_pattern = fr"{module_name}\s*#\([^)]*\)[^()]*\(([^)]*)\)"
+  without_parameter_pattern = fr"{module_name}\s*\(([^\)]+)\)"
+  matches_with_parameter = re.findall(with_parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  matches_without_parameter = re.findall(without_parameter_pattern, fileData, re.MULTILINE|re.DOTALL)
+  logging.debug(matches_with_parameter)
+  logging.debug(matches_without_parameter)
+  if not matches_with_parameter and not matches_without_parameter:
+    logging.warning(f"No IOs found for module: {module_name}")
+    return IOList
+  else:
+    matches = matches_with_parameter or matches_without_parameter
+    logging.debug(matches)
+    portListString = matches[0]
+    logging.debug(portListString)
+  portList = portListString.split(',')
+  portList = [eachPort.strip() for eachPort in portList]
+  portList = [" ".join(eachPort.split()) for eachPort in portList]
+  portList = [re.sub("\[([^\]]+)\]"," ["+getPortWidth(eachPort)+"] ",eachPort) if getPortWidth(eachPort) else eachPort for eachPort in portList]
+  portList = [" ".join(eachPort.split()) for eachPort in portList]
+  portList = [eachPort.replace("=", " = ") for eachPort in portList]
+  logging.debug(portList)
+  previousPortInfo = {"portDir":"","portType":"","portWidth":""}
+  for port in portList:
+    portDir   = "" #getPortDir(port)
+    portType  = ""
+    portWidth = "" #getPortWidth(port)
+    portName  = ""
+    portValue = ""
+    portSegments = port.split()
+    if "=" in portSegments:
+      portValue = portSegments[-1]
+      portSegments.remove(portValue)
+      portSegments.remove("=")
+    # Capturing the portName from the list
+    portName = portSegments[-1]
+    # Solving for other port parameters
+    if len(portSegments) == 1:
+      portDir = previousPortInfo["portDir"]
+      portType = previousPortInfo["portType"]
+      portWidth = previousPortInfo["portWidth"]
+    else:
+      portDir = getPortDir(port)
+      portWidth = getPortWidth(port)
+      portSegments.remove(portName)
+      if portDir:
+        portSegments.remove(portDir)
+      if portWidth:
+        portSegments.remove("["+portWidth+"]")
+      portType = " ".join(portSegments)
+    IOList.append({"portName":portName, "portDir":portDir, "portType":portType, "portWidth":portWidth, "portValue":portValue})
+    previousPortInfo = {"portDir":portDir,"portType":portType,"portWidth":portWidth}
+    logging.debug(f"=>>>>>>>>>>> Port Name: {portName}, Dir: {portDir}, Type: {portType}, Width: {portWidth}, Value: {portValue}")
+  logging.debug(IOList)
+  return IOList
+
 def getIOPortDictForModule(module_name: str, fileData:str) -> list:
   IOList = []
   portListString = ""
@@ -225,10 +285,11 @@ def main():
       fileData = fileToProcess.read()
       getModuleNames(fileData)
       # getParameterDict(fileData)
-      getIOPortDictForModule("mod1",fileData)
-      getIOPortDictForModule("mod2",fileData)
-      getIOPortDictForModule("mod3",fileData)
+      # getIOPortDictForModule("mod1",fileData)
+      # getIOPortDictForModule("mod2",fileData)
+      # getIOPortDictForModule("mod3",fileData)
       # getParameterDictForModule("mod2",fileData)
+      getIOPortDict(fileData)
 
 if __name__ == "__main__":
     main()
